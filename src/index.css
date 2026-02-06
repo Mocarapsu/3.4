@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 7%;
+    --foreground: 40 20% 95%;
+    --card: 0 0% 10%;
+    --card-foreground: 40 20% 95%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 40 20% 95%;
+    --primary: 38 75% 55%;
+    --primary-foreground: 0 0% 7%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 40 20% 95%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 38 75% 55%;
+    --accent-foreground: 0 0% 7%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 40 20% 95%;
+    --border: 0 0% 20%;
+    --input: 0 0% 18%;
+    --ring: 38 75% 55%;
+    --radius: 0.5rem;
+    --gold: 38 75% 55%;
+    --gold-foreground: 0 0% 7%;
+    --success: 142 76% 36%;
+    --success-foreground: 40 20% 95%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 7%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
