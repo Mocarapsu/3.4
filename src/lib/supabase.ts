@@ -1,16 +1,21 @@
 /// <reference types="vite/client" />
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const URL = import.meta.env.VITE_SUPABASE_URL;
-const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
-// Validacion estricta: si faltan las variables, el proyecto no arranca
-if (!URL || !KEY) {
-  throw new Error(
-    'Faltan las variables de entorno de Supabase. ' +
-    'Crea un archivo .env con VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY'
-  );
+console.log('[v0] Supabase URL definida:', !!URL);
+console.log('[v0] Supabase KEY definida:', !!KEY);
+
+let supabase: SupabaseClient;
+
+if (URL && KEY) {
+  supabase = createClient(URL, KEY);
+} else {
+  // Crear un cliente dummy para que la app no crashee al importar.
+  // El AuthContext quedara en loading=false con user=null, mostrando LoginPage.
+  console.warn('[v0] Variables de Supabase no configuradas. La app mostrara login pero no podra conectar.');
+  supabase = createClient('https://placeholder.supabase.co', 'placeholder-key');
 }
 
-// Exportamos el cliente ya inicializado (nunca null)
-export const supabase = createClient(URL, KEY);
+export { supabase };
