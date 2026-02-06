@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (session?.user) {
           setUser(session.user);
-          const p = await loadProfile(session.user.id, 0);
+          const p = await loadProfile(session.user.id, 2);
           if (mounted) setProfile(p);
         }
       } catch {

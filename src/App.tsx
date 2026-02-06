@@ -21,29 +21,33 @@ import type { UserRole } from './types';
  * - Sin perfil/rol -> /portal (sera client por defecto via trigger)
  * - Con rol -> su dashboard correspondiente
  */
+function getDashboardRoute(role: UserRole): string {
+  const routes: Record<UserRole, string> = {
+    admin: '/admin',
+    barber: '/barber',
+    client: '/portal',
+  };
+  return routes[role];
+}
+
 function AppRoutes() {
   const { user, profile, loading } = useAuth();
 
-  if (loading) return <LoadingScreen />;
-
-  // Si no hay usuario -> login. Si hay usuario -> redirigir segun su rol.
-  let defaultRoute = '/login';
-  if (user) {
-    const role = profile?.role ?? 'client';
-    const routes: Record<UserRole, string> = {
-      admin: '/admin',
-      barber: '/barber',
-      client: '/portal',
-    };
-    defaultRoute = routes[role];
-  }
+  // Para la redireccion por defecto cuando el usuario esta logueado
+  const defaultRoute = user
+    ? getDashboardRoute(profile?.role ?? 'client')
+    : '/login';
 
   return (
     <Routes>
-      {/* Ruta publica: login */}
+      {/* Ruta publica: login -- si ya hay sesion redirige a su dashboard */}
       <Route
         path="/login"
-        element={user ? <Navigate to={defaultRoute} replace /> : <LoginPage />}
+        element={
+          !loading && user
+            ? <Navigate to={defaultRoute} replace />
+            : <LoginPage />
+        }
       />
 
       {/* Rutas protegidas por rol */}
@@ -72,8 +76,8 @@ function AppRoutes() {
         }
       />
 
-      {/* Cualquier otra ruta -> redirigir al default */}
-      <Route path="*" element={<Navigate to={defaultRoute} replace />} />
+      {/* Cualquier otra ruta -> loading o redirigir al default */}
+      <Route path="*" element={loading ? <LoadingScreen /> : <Navigate to={defaultRoute} replace />} />
     </Routes>
   );
 }
