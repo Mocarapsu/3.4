@@ -28,19 +28,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Verificar sesion actual al montar el componente
     const checkSession = async () => {
-      console.log('[v0] checkSession: iniciando...');
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        console.log('[v0] checkSession: sesion obtenida, user:', session?.user?.email ?? 'null');
 
         if (session?.user) {
           setUser(session.user);
           await fetchProfile(session.user.id);
         }
       } catch (error) {
-        console.error('[v0] checkSession: error:', error);
+        console.error('Error en checkSession:', error);
       } finally {
-        console.log('[v0] checkSession: setLoading(false)');
         setLoading(false);
       }
     };
