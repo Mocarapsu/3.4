@@ -22,6 +22,8 @@ async function loadProfile(userId: string, retries = 3): Promise<Profile | null>
         .eq('id', userId)
         .single();
 
+      console.log('[v0] loadProfile attempt', i, '- data:', JSON.stringify(data), 'error:', JSON.stringify(error));
+
       if (data && !error) return data as Profile;
 
       // Si es AbortError, reintentar
@@ -32,8 +34,14 @@ async function loadProfile(userId: string, retries = 3): Promise<Profile | null>
           continue;
         }
       }
-    } catch {
-      // error de red, reintentar
+      
+      // Otro error (ej: no existe el perfil), no reintentar
+      if (error && !msg.includes('abort')) {
+        console.warn('[v0] loadProfile non-abort error:', msg);
+        break;
+      }
+    } catch (e) {
+      console.warn('[v0] loadProfile catch:', e);
     }
     if (i < retries) await new Promise(r => setTimeout(r, 600));
   }
@@ -47,26 +55,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // 1. Cargar sesion existente
+    console.log('[v0] AuthProvider: calling getSession...');
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('[v0] AuthProvider: getSession result -', session?.user?.email ?? 'no session');
       if (session?.user) {
         setUser(session.user);
         const p = await loadProfile(session.user.id, 3);
+        console.log('[v0] AuthProvider: profile loaded, role:', p?.role ?? 'NULL');
         setProfile(p);
       }
       setLoading(false);
-    }).catch(() => {
+    }).catch((err) => {
+      console.error('[v0] AuthProvider: getSession error:', err);
       setLoading(false);
     });
 
     // 2. Escuchar cambios de auth (login, logout, token refresh)
-    // NO llamamos unsubscribe en el cleanup -- hacerlo aborta las
-    // peticiones internas de supabase-js. AuthProvider vive toda
-    // la vida de la app, no necesita cleanup.
     supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[v0] onAuthStateChange:', event, session?.user?.email ?? 'no user');
       if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
         setLoading(true);
         const p = await loadProfile(session.user.id, 3);
+        console.log('[v0] onAuthStateChange: profile loaded, role:', p?.role ?? 'NULL');
         setProfile(p);
         setLoading(false);
       } else if (event === 'SIGNED_OUT') {
