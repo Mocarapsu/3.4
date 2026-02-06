@@ -39,8 +39,25 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   useEffect(() => {
-    fetchServices();
-    fetchBarbers();
+    let ignore = false;
+
+    const loadInitialData = async () => {
+      try {
+        const [servicesRes, barbersRes] = await Promise.all([
+          supabase.from('services').select('*').eq('is_active', true),
+          supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
+        ]);
+        if (ignore) return;
+        setServices(servicesRes.data || []);
+        setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Error loading booking data:', error);
+      }
+    };
+
+    loadInitialData();
+    return () => { ignore = true; };
   }, []);
 
   useEffect(() => {
@@ -48,24 +65,6 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
       fetchAvailableSlots();
     }
   }, [selectedBarber, selectedDate, selectedService]);
-
-  const fetchServices = async () => {
-    if (!supabase) return;
-    const { data } = await supabase
-      .from('services')
-      .select('*')
-      .eq('is_active', true);
-    setServices(data || []);
-  };
-
-  const fetchBarbers = async () => {
-    if (!supabase) return;
-    const { data } = await supabase
-      .from('barbers')
-      .select(`*, profile:profiles(*)`)
-      .eq('is_active', true);
-    setBarbers((data as (Barber & { profile: Profile })[]) || []);
-  };
 
   const fetchAvailableSlots = async () => {
     if (!selectedBarber || !selectedDate || !selectedService) return;

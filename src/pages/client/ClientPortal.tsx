@@ -23,7 +23,33 @@ export function ClientPortal() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let ignore = false;
+
+    const fetchAppointments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('appointments')
+          .select(`
+            *,
+            barber:barbers(*, profile:profiles(*)),
+            service:services(*)
+          `)
+          .order('appointment_date', { ascending: false })
+          .order('start_time', { ascending: false });
+
+        if (ignore) return;
+        if (error) throw error;
+        setAppointments(data || []);
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Error fetching appointments:', error);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+
     fetchAppointments();
+    return () => { ignore = true; };
   }, []);
 
   const fetchAppointments = async () => {
@@ -40,7 +66,8 @@ export function ClientPortal() {
 
       if (error) throw error;
       setAppointments(data || []);
-    } catch (error) {
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching appointments:', error);
     } finally {
       setLoading(false);

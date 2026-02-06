@@ -30,27 +30,29 @@ export function BarberDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let ignore = false;
     if (user) {
-      fetchBarberData();
+      fetchBarberData(ignore);
     }
+    return () => { ignore = true; };
   }, [user, selectedDate]);
 
-  const fetchBarberData = async () => {
-    if (!supabase) return;
+  const fetchBarberData = async (ignore = false) => {
     try {
       // First get the barber record
-      const { data: barberData, error: barberError } = await supabase!
+      const { data: barberData, error: barberError } = await supabase
         .from('barbers')
         .select('*')
         .eq('profile_id', user?.id)
         .single();
 
       if (barberError) throw barberError;
+      if (ignore) return;
       setBarber(barberData);
 
       // Then fetch appointments for this barber
       const dateStr = selectedDate.toISOString().split('T')[0];
-      const { data: appointmentsData, error: appointmentsError } = await supabase!
+      const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
         .select(`
           *,
@@ -62,6 +64,7 @@ export function BarberDashboard() {
         .order('start_time', { ascending: true });
 
       if (appointmentsError) throw appointmentsError;
+      if (ignore) return;
       setAppointments(appointmentsData || []);
 
       // Calculate stats
@@ -79,17 +82,17 @@ export function BarberDashboard() {
         todayEarnings,
         pendingPayments,
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching barber data:', error);
     } finally {
-      setLoading(false);
+      if (!ignore) setLoading(false);
     }
   };
 
   const handleUpdateAppointmentStatus = async (appointmentId: string, status: 'confirmed' | 'completed' | 'cancelled') => {
-    if (!supabase) return;
     try {
-      const { error } = await supabase!
+      const { error } = await supabase
         .from('appointments')
         .update({ status })
         .eq('id', appointmentId);
@@ -102,9 +105,8 @@ export function BarberDashboard() {
   };
 
   const handleUpdatePaymentStatus = async (appointmentId: string, paymentStatus: 'paid', paymentMethod: 'cash' | 'online') => {
-    if (!supabase) return;
     try {
-      const { error } = await supabase!
+      const { error } = await supabase
         .from('appointments')
         .update({ 
           payment_status: paymentStatus,
