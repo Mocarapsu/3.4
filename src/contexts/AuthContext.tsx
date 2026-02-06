@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
-import type { Profile, UserRole } from '../types';
+import type { Profile } from '../types';
 
 // =============================================
 // Analogia PHP: Este archivo es como tu "sesion" de PHP.
@@ -15,7 +15,6 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  updateUserRole: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,7 +25,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verificar sesion actual al montar el componente
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -62,10 +60,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  /** Obtener perfil de Supabase con 2 intentos (el trigger puede tardar) */
+  /**
+   * Obtener perfil de Supabase.
+   * El trigger de Supabase crea el perfil automaticamente con role='client'
+   * al registrarse, pero puede tardar unos milisegundos.
+   * Hacemos hasta 5 intentos con espera progresiva para darle tiempo.
+   */
   const fetchProfile = async (userId: string) => {
-    let profileData: Profile | null = null;
-    const maxAttempts = 2;
+    const maxAttempts = 5;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const { data, error } = await supabase
@@ -75,17 +77,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (!error && data) {
-        profileData = data as Profile;
-        break;
+        setProfile(data as Profile);
+        return;
       }
 
-      // Si fallo y no es el ultimo intento, espera 500ms
+      // Espera progresiva: 300ms, 500ms, 800ms, 1200ms
       if (attempt < maxAttempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 300 + (attempt * 200)));
       }
     }
 
-    setProfile(profileData);
+    // Si despues de todos los intentos no hay perfil, dejamos null.
+    // El ProtectedRoute redirigira al login.
+    setProfile(null);
   };
 
   const signOut = async () => {
@@ -98,21 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserRole = async (role: UserRole) => {
-    if (!user) return;
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role })
-      .eq('id', user.id);
-
-    if (error) throw error;
-
-    setProfile(prev => prev ? { ...prev, role } : null);
-  };
-
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut, updateUserRole }}>
+    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

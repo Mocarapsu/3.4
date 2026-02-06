@@ -3,7 +3,6 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './pages/LoginPage';
-import { RoleSelector } from './components/RoleSelector';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { ClientPortal } from './pages/client/ClientPortal';
@@ -17,12 +16,14 @@ import type { UserRole } from './types';
 // =============================================
 
 /**
- * Calcula la ruta por defecto segun el estado del usuario.
- * Es como un switch en PHP que decide a donde redirigir.
+ * Calcula la ruta por defecto segun el rol del usuario.
+ * - No logueado -> /login
+ * - Sin perfil/rol -> /portal (sera client por defecto via trigger)
+ * - Con rol -> su dashboard correspondiente
  */
 function getDefaultRoute(user: unknown, profile: { role: UserRole } | null): string {
   if (!user) return '/login';
-  if (!profile || !profile.role) return '/select-role';
+  if (!profile || !profile.role) return '/portal';
 
   const routes: Record<UserRole, string> = {
     admin: '/admin',
@@ -41,20 +42,10 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Rutas publicas */}
+      {/* Ruta publica: login */}
       <Route
         path="/login"
         element={user ? <Navigate to={defaultRoute} replace /> : <LoginPage />}
-      />
-
-      {/* Seleccion de rol (solo si estas logueado pero sin rol) */}
-      <Route
-        path="/select-role"
-        element={
-          user && !profile?.role
-            ? <RoleSelector />
-            : <Navigate to={defaultRoute} replace />
-        }
       />
 
       {/* Rutas protegidas por rol */}

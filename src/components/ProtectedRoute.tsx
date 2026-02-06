@@ -13,7 +13,7 @@ import type { UserRole } from '../types';
  *   });
  *
  * - Si el usuario no esta logueado -> redirect a /login
- * - Si no tiene rol asignado -> redirect a /select-role
+ * - Si no tiene perfil -> redirect a /login (el trigger fallaria, raro)
  * - Si su rol no esta en allowedRoles -> redirect a su dashboard
  */
 interface ProtectedRouteProps {
@@ -30,8 +30,9 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   // No hay usuario -> ir al login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Tiene usuario pero no tiene perfil/rol -> debe seleccionar rol
-  if (!profile || !profile.role) return <Navigate to="/select-role" replace />;
+  // Tiene usuario pero no tiene perfil (el trigger aun no creo el perfil)
+  // Lo mandamos al portal de cliente que es el rol por defecto
+  if (!profile || !profile.role) return <Navigate to="/portal" replace />;
 
   // Tiene rol pero no esta permitido en esta ruta -> redirigir a su dashboard
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
