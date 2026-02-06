@@ -39,15 +39,12 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   useEffect(() => {
-    let ignore = false;
-
     const loadInitialData = async () => {
       try {
         const [servicesRes, barbersRes] = await Promise.all([
           supabase.from('services').select('*').eq('is_active', true),
           supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
         ]);
-        if (ignore) return;
         setServices(servicesRes.data || []);
         setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
       } catch (error: unknown) {
@@ -57,7 +54,6 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
     };
 
     loadInitialData();
-    return () => { ignore = true; };
   }, []);
 
   useEffect(() => {
@@ -82,7 +78,6 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
     }
 
     // Get existing appointments for this barber on this date
-    if (!supabase) return;
     const { data: existingAppointments } = await supabase
       .from('appointments')
       .select('start_time, end_time')
@@ -135,7 +130,6 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
       const endMinutes = hours * 60 + mins + (selectedService.duration || 30);
       const endTime = `${Math.floor(endMinutes / 60).toString().padStart(2, '0')}:${(endMinutes % 60).toString().padStart(2, '0')}`;
 
-      if (!supabase) throw new Error('Supabase client is not initialized');
       const { error } = await supabase.from('appointments').insert({
         client_id: user.id,
         barber_id: selectedBarber.id,

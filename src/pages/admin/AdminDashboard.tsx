@@ -32,12 +32,10 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let ignore = false;
-    fetchData(ignore);
-    return () => { ignore = true; };
+    fetchData();
   }, []);
 
-  const fetchData = async (ignore = false) => {
+  const fetchData = async () => {
     try {
       // Fetch barbers with profiles
       const { data: barbersData } = await supabase
@@ -47,7 +45,6 @@ export function AdminDashboard() {
           profile:profiles(*)
         `);
 
-      if (ignore) return;
       if (barbersData) {
         setBarbers(barbersData as (Barber & { profile: Profile })[]);
       }
@@ -64,7 +61,6 @@ export function AdminDashboard() {
         .order('appointment_date', { ascending: false })
         .limit(50);
 
-      if (ignore) return;
       if (appointmentsData) {
         setAppointments(appointmentsData);
         
@@ -93,7 +89,7 @@ export function AdminDashboard() {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching data:', error);
     } finally {
-      if (!ignore) setLoading(false);
+      setLoading(false);
     }
   };
 

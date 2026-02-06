@@ -4,18 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { LoadingScreen } from './LoadingScreen';
 import type { UserRole } from '../types';
 
-/**
- * Componente que protege rutas segun rol.
- *
- * Analogia PHP: Es como un middleware de Laravel:
- *   Route::middleware(['auth', 'role:admin'])->group(function () {
- *     Route::get('/admin', [AdminController::class, 'index']);
- *   });
- *
- * - Si el usuario no esta logueado -> redirect a /login
- * - Si no tiene perfil -> redirect a /login (el trigger fallaria, raro)
- * - Si su rol no esta en allowedRoles -> redirect a su dashboard
- */
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: UserRole[];
@@ -30,12 +18,11 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   // No hay usuario -> ir al login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Tiene usuario pero no tiene perfil todavia.
-  // En vez de redirigir (lo que causa un loop), dejamos pasar.
-  // El dashboard mostrara datos vacios hasta que el perfil cargue.
-  if (!profile || !profile.role) return <>{children}</>;
+  // Tiene usuario pero el perfil aun no cargo -> mostrar loading
+  // (esto es temporal, el fetchProfile resolvera pronto)
+  if (!profile) return <LoadingScreen />;
 
-  // Tiene rol pero no esta permitido en esta ruta -> redirigir a su dashboard
+  // Verificar que el rol este permitido en esta ruta
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
     const dashboardRoutes: Record<UserRole, string> = {
       admin: '/admin',
@@ -45,6 +32,5 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to={dashboardRoutes[profile.role]} replace />;
   }
 
-  // Todo bien, mostrar el contenido
   return <>{children}</>;
 }

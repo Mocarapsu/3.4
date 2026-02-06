@@ -41,9 +41,6 @@ export function LoginPage() {
 
     try {
       if (isLogin) {
-        if (!supabase) {
-          throw new Error('Supabase client is not initialized');
-        }
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -60,10 +57,7 @@ export function LoginPage() {
         }
         // No necesita navigate, el useAuth lo hace automáticamente
       } else {
-        if (!supabase) {
-          throw new Error('Supabase client is not initialized');
-        }
-        const { data, error } = await supabase.auth.signUp({
+        const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {

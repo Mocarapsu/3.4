@@ -30,14 +30,12 @@ export function BarberDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let ignore = false;
     if (user) {
-      fetchBarberData(ignore);
+      fetchBarberData();
     }
-    return () => { ignore = true; };
   }, [user, selectedDate]);
 
-  const fetchBarberData = async (ignore = false) => {
+  const fetchBarberData = async () => {
     try {
       // First get the barber record
       const { data: barberData, error: barberError } = await supabase
@@ -47,7 +45,6 @@ export function BarberDashboard() {
         .single();
 
       if (barberError) throw barberError;
-      if (ignore) return;
       setBarber(barberData);
 
       // Then fetch appointments for this barber
@@ -64,7 +61,6 @@ export function BarberDashboard() {
         .order('start_time', { ascending: true });
 
       if (appointmentsError) throw appointmentsError;
-      if (ignore) return;
       setAppointments(appointmentsData || []);
 
       // Calculate stats
@@ -86,7 +82,7 @@ export function BarberDashboard() {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('Error fetching barber data:', error);
     } finally {
-      if (!ignore) setLoading(false);
+      setLoading(false);
     }
   };
 
