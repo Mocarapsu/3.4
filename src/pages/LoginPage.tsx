@@ -47,13 +47,24 @@ export function LoginPage() {
         });
 
         if (error) {
-          // Si el email no está confirmado, mostrar mensaje diferente
           if (error.message.includes('Email not confirmed')) {
             setError('Debes confirmar tu correo primero. Revisa tu bandeja de entrada.');
+          } else if (error.message.includes('Database error')) {
+            // Error del servidor de Supabase - reintentar una vez
+            const retry = await supabase.auth.signInWithPassword({ email, password });
+            if (retry.error) {
+              setError('Error del servidor. Intenta de nuevo en unos segundos.');
+              throw retry.error;
+            }
+            // Si el retry funciono, salir del bloque
+            return;
+          } else if (error.message.includes('Invalid login credentials')) {
+            setError('Correo o contrasena incorrectos');
+            throw error;
           } else {
             setError(error.message);
+            throw error;
           }
-          throw error;
         }
         // No necesita navigate, el useAuth lo hace automáticamente
       } else {

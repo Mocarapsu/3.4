@@ -36,55 +36,55 @@ export function BarberDashboard() {
   }, [user, selectedDate]);
 
   const fetchBarberData = async () => {
-    try {
-      // First get the barber record
-      const { data: barberData, error: barberError } = await supabase
-        .from('barbers')
-        .select('*')
-        .eq('profile_id', user?.id)
-        .single();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { data: barberData, error: barberError } = await supabase
+          .from('barbers')
+          .select('*')
+          .eq('profile_id', user?.id)
+          .single();
 
-      if (barberError) throw barberError;
-      setBarber(barberData);
+        if (barberError) {
+          if (barberError.message?.includes('abort') && attempt < 2) {
+            await new Promise(r => setTimeout(r, 500)); continue;
+          }
+          console.error('Error fetching barber:', barberError.message);
+          break;
+        }
+        setBarber(barberData);
 
-      // Then fetch appointments for this barber
-      const dateStr = selectedDate.toISOString().split('T')[0];
-      const { data: appointmentsData, error: appointmentsError } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          client:profiles!appointments_client_id_fkey(*),
-          service:services(*)
-        `)
-        .eq('barber_id', barberData.id)
-        .eq('appointment_date', dateStr)
-        .order('start_time', { ascending: true });
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('*, client:profiles!appointments_client_id_fkey(*), service:services(*)')
+          .eq('barber_id', barberData.id)
+          .eq('appointment_date', dateStr)
+          .order('start_time', { ascending: true });
 
-      if (appointmentsError) throw appointmentsError;
-      setAppointments(appointmentsData || []);
+        if (appointmentsError) {
+          if (appointmentsError.message?.includes('abort') && attempt < 2) {
+            await new Promise(r => setTimeout(r, 500)); continue;
+          }
+          console.error('Error fetching appointments:', appointmentsError.message);
+          break;
+        }
+        setAppointments(appointmentsData || []);
 
-      // Calculate stats
-      const today = new Date().toISOString().split('T')[0];
-      const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today) || [];
-      const completedToday = todayAppointments.filter(a => a.status === 'completed').length;
-      const todayEarnings = todayAppointments
-        .filter(a => a.payment_status === 'paid')
-        .reduce((sum, a) => sum + Number(a.total_amount), 0);
-      const pendingPayments = todayAppointments.filter(a => a.payment_status === 'pending').length;
-
-      setStats({
-        todayAppointments: todayAppointments.length,
-        completedToday,
-        todayEarnings,
-        pendingPayments,
-      });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('AbortError') || msg.includes('aborted')) return;
-      console.error('Error fetching barber data:', error);
-    } finally {
-      setLoading(false);
+        const today = new Date().toISOString().split('T')[0];
+        const todayApps = appointmentsData?.filter(a => a.appointment_date === today) || [];
+        setStats({
+          todayAppointments: todayApps.length,
+          completedToday: todayApps.filter(a => a.status === 'completed').length,
+          todayEarnings: todayApps.filter(a => a.payment_status === 'paid').reduce((s, a) => s + Number(a.total_amount), 0),
+          pendingPayments: todayApps.filter(a => a.payment_status === 'pending').length,
+        });
+        break;
+      } catch (e) {
+        if (attempt < 2) { await new Promise(r => setTimeout(r, 500)); continue; }
+        console.error('Error fetching barber data:', e);
+      }
     }
+    setLoading(false);
   };
 
   const handleUpdateAppointmentStatus = async (appointmentId: string, status: 'confirmed' | 'completed' | 'cancelled') => {

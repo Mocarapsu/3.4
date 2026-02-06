@@ -36,62 +36,48 @@ export function AdminDashboard() {
   }, []);
 
   const fetchData = async () => {
-    try {
-      // Fetch barbers with profiles
-      const { data: barbersData } = await supabase
-        .from('barbers')
-        .select(`
-          *,
-          profile:profiles(*)
-        `);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const [barbersRes, appointmentsRes] = await Promise.all([
+          supabase.from('barbers').select('*, profile:profiles(*)'),
+          supabase.from('appointments')
+            .select('*, client:profiles!appointments_client_id_fkey(*), barber:barbers(*, profile:profiles(*)), service:services(*)')
+            .order('appointment_date', { ascending: false })
+            .limit(50),
+        ]);
 
-      if (barbersData) {
-        setBarbers(barbersData as (Barber & { profile: Profile })[]);
+        // Si hay abort, reintentar
+        const bErr = barbersRes.error?.message ?? '';
+        const aErr = appointmentsRes.error?.message ?? '';
+        if (bErr.includes('abort') || aErr.includes('abort')) {
+          if (attempt < 2) { await new Promise(r => setTimeout(r, 500)); continue; }
+        }
+
+        if (barbersRes.data) {
+          setBarbers(barbersRes.data as (Barber & { profile: Profile })[]);
+        }
+
+        if (appointmentsRes.data) {
+          setAppointments(appointmentsRes.data);
+          const today = new Date().toISOString().split('T')[0];
+          const completedToday = appointmentsRes.data.filter(
+            a => a.appointment_date === today && a.status === 'completed'
+          ).length;
+          const totalEarnings = appointmentsRes.data
+            .filter(a => a.payment_status === 'paid')
+            .reduce((sum, a) => sum + Number(a.total_amount), 0);
+          const pendingPayments = appointmentsRes.data.filter(
+            a => a.payment_status === 'pending' && a.status !== 'cancelled'
+          ).length;
+          setStats({ totalEarnings, totalAppointments: appointmentsRes.data.length, completedToday, pendingPayments });
+        }
+        break;
+      } catch (e) {
+        if (attempt < 2) { await new Promise(r => setTimeout(r, 500)); continue; }
+        console.error('Error fetching data:', e);
       }
-
-      // Fetch appointments
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          client:profiles!appointments_client_id_fkey(*),
-          barber:barbers(*, profile:profiles(*)),
-          service:services(*)
-        `)
-        .order('appointment_date', { ascending: false })
-        .limit(50);
-
-      if (appointmentsData) {
-        setAppointments(appointmentsData);
-        
-        // Calculate stats
-        const today = new Date().toISOString().split('T')[0];
-        const completedToday = appointmentsData.filter(
-          a => a.appointment_date === today && a.status === 'completed'
-        ).length;
-        
-        const totalEarnings = appointmentsData
-          .filter(a => a.payment_status === 'paid')
-          .reduce((sum, a) => sum + Number(a.total_amount), 0);
-        
-        const pendingPayments = appointmentsData.filter(
-          a => a.payment_status === 'pending' && a.status !== 'cancelled'
-        ).length;
-
-        setStats({
-          totalEarnings,
-          totalAppointments: appointmentsData.length,
-          completedToday,
-          pendingPayments,
-        });
-      }
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('AbortError') || msg.includes('aborted')) return;
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const tabs = [

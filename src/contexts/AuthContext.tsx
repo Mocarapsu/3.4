@@ -12,8 +12,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Buscar perfil en la DB. Si no existe (trigger tarda), reintenta.
-async function loadProfile(userId: string, retries = 2): Promise<Profile | null> {
+// Buscar perfil en la DB con reintentos (por si hay AbortError, red lenta, etc)
+async function loadProfile(userId: string, retries = 3): Promise<Profile | null> {
   for (let i = 0; i <= retries; i++) {
     try {
       const { data, error } = await supabase
@@ -23,10 +23,19 @@ async function loadProfile(userId: string, retries = 2): Promise<Profile | null>
         .single();
 
       if (data && !error) return data as Profile;
+
+      // Si es AbortError, reintentar
+      const msg = error?.message ?? '';
+      if (msg.includes('abort') || msg.includes('AbortError')) {
+        if (i < retries) {
+          await new Promise(r => setTimeout(r, 600));
+          continue;
+        }
+      }
     } catch {
-      // ignorar errores de red
+      // error de red, reintentar
     }
-    if (i < retries) await new Promise(r => setTimeout(r, 400));
+    if (i < retries) await new Promise(r => setTimeout(r, 600));
   }
   return null;
 }
@@ -41,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
-        const p = await loadProfile(session.user.id, 2);
+        const p = await loadProfile(session.user.id, 3);
         setProfile(p);
       }
       setLoading(false);
@@ -50,9 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     // 2. Escuchar cambios de auth (login, logout, token refresh)
-    // NO guardamos la subscription para unsubscribe porque hacerlo
-    // aborta las peticiones internas de supabase-js (causa AbortError).
-    // AuthProvider vive toda la vida de la app, no necesita cleanup.
+    // NO llamamos unsubscribe en el cleanup -- hacerlo aborta las
+    // peticiones internas de supabase-js. AuthProvider vive toda
+    // la vida de la app, no necesita cleanup.
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
@@ -71,11 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   function signOut() {
-    // Limpiar estado inmediatamente para que la UI responda rapido
     setUser(null);
     setProfile(null);
     setLoading(false);
-    // Llamar a supabase en background
     supabase.auth.signOut().catch(() => {});
   }
 

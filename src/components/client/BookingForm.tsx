@@ -39,22 +39,45 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadInitialData = async () => {
-      try {
-        const [servicesRes, barbersRes] = await Promise.all([
-          supabase.from('services').select('*').eq('is_active', true),
-          supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
-        ]);
-        setServices(servicesRes.data || []);
-        setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes('AbortError') || msg.includes('aborted')) return;
-        console.error('Error loading booking data:', error);
+      // Reintentar hasta 3 veces si falla (por AbortError, red, etc)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (cancelled) return;
+        try {
+          const [servicesRes, barbersRes] = await Promise.all([
+            supabase.from('services').select('*').eq('is_active', true),
+            supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
+          ]);
+
+          // Si hay error de abort, reintentar
+          const sErr = servicesRes.error?.message ?? '';
+          const bErr = barbersRes.error?.message ?? '';
+          if (sErr.includes('abort') || bErr.includes('abort')) {
+            if (attempt < 2) {
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+            }
+          }
+
+          if (!cancelled) {
+            setServices(servicesRes.data || []);
+            setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
+          }
+          return; // exito, salir del loop
+        } catch (e) {
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 500));
+          } else {
+            console.error('Error loading booking data:', e);
+          }
+        }
       }
     };
 
     loadInitialData();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -377,7 +400,7 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-primary" />
-            Método de pago
+            M��todo de pago
           </h3>
           <div className="grid gap-3">
             <button

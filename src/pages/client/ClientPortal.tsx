@@ -27,26 +27,40 @@ export function ClientPortal() {
   }, []);
 
   const fetchAppointments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          barber:barbers(*, profile:profiles(*)),
-          service:services(*)
-        `)
-        .order('appointment_date', { ascending: false })
-        .order('start_time', { ascending: false });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from('appointments')
+          .select(`
+            *,
+            barber:barbers(*, profile:profiles(*)),
+            service:services(*)
+          `)
+          .order('appointment_date', { ascending: false })
+          .order('start_time', { ascending: false });
 
-      if (error) throw error;
-      setAppointments(data || []);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('AbortError') || msg.includes('aborted')) return;
-      console.error('Error fetching appointments:', error);
-    } finally {
-      setLoading(false);
+        if (error) {
+          const msg = error.message ?? '';
+          if (msg.includes('abort') || msg.includes('AbortError')) {
+            if (attempt < 2) {
+              await new Promise(r => setTimeout(r, 500));
+              continue;
+            }
+          }
+          console.error('Error fetching appointments:', error.message);
+          break;
+        }
+        setAppointments(data || []);
+        break;
+      } catch (e) {
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+        console.error('Error fetching appointments:', e);
+      }
     }
+    setLoading(false);
   };
 
   const handleCancelAppointment = async (appointmentId: string) => {
