@@ -12,8 +12,6 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
 
-  console.log('[v0] ProtectedRoute:', { loading, user: user?.email, role: profile?.role, allowedRoles });
-
   // Mientras el auth se resuelve, mostrar loading
   if (loading) return <LoadingScreen />;
 

@@ -27,7 +27,6 @@ export function ClientPortal() {
   }, []);
 
   const fetchAppointments = async () => {
-    console.log('[v0] ClientPortal: fetching appointments...');
     try {
       const { data, error } = await supabase
         .from('appointments')
@@ -39,7 +38,6 @@ export function ClientPortal() {
         .order('appointment_date', { ascending: false })
         .order('start_time', { ascending: false });
 
-      console.log('[v0] ClientPortal: fetch result, error:', error, 'data count:', data?.length);
       if (error) throw error;
       setAppointments(data || []);
     } catch (error: unknown) {

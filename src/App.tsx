@@ -24,8 +24,6 @@ import type { UserRole } from './types';
 function AppRoutes() {
   const { user, profile, loading } = useAuth();
 
-  console.log('[v0] AppRoutes:', { loading, user: user?.email, role: profile?.role });
-
   if (loading) return <LoadingScreen />;
 
   // Si no hay usuario -> login. Si hay usuario -> redirigir segun su rol.

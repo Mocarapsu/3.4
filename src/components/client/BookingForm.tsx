@@ -45,8 +45,6 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
           supabase.from('services').select('*').eq('is_active', true),
           supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
         ]);
-        console.log('[v0] BookingForm: services error:', servicesRes.error, 'data count:', servicesRes.data?.length);
-        console.log('[v0] BookingForm: barbers error:', barbersRes.error, 'data count:', barbersRes.data?.length);
         setServices(servicesRes.data || []);
         setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
       } catch (error: unknown) {
