@@ -23,14 +23,15 @@ import type { UserRole } from './types';
  */
 function getDefaultRoute(user: unknown, profile: { role: UserRole } | null): string {
   if (!user) return '/login';
-  if (!profile || !profile.role) return '/portal';
 
+  // Si el perfil aun no cargo, mandamos a /portal (client es el default)
+  const role = profile?.role ?? 'client';
   const routes: Record<UserRole, string> = {
     admin: '/admin',
     barber: '/barber',
     client: '/portal',
   };
-  return routes[profile.role];
+  return routes[role];
 }
 
 function AppRoutes() {

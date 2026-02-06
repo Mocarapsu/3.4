@@ -30,9 +30,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   // No hay usuario -> ir al login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Tiene usuario pero no tiene perfil (el trigger aun no creo el perfil)
-  // Lo mandamos al portal de cliente que es el rol por defecto
-  if (!profile || !profile.role) return <Navigate to="/portal" replace />;
+  // Tiene usuario pero no tiene perfil todavia.
+  // En vez de redirigir (lo que causa un loop), dejamos pasar.
+  // El dashboard mostrara datos vacios hasta que el perfil cargue.
+  if (!profile || !profile.role) return <>{children}</>;
 
   // Tiene rol pero no esta permitido en esta ruta -> redirigir a su dashboard
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
