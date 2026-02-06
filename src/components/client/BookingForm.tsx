@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -73,7 +71,7 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
     if (!selectedBarber || !selectedDate || !selectedService) return;
 
     const dateStr = selectedDate.toISOString().split('T')[0];
-    const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const dayNames = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
     const dayName = dayNames[selectedDate.getDay()];
     
     const schedule = selectedBarber.work_schedule as WorkSchedule;
@@ -207,7 +205,7 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
   };
 
   const isBarberAvailableOnDate = (barber: Barber & { profile: Profile }, date: Date) => {
-    const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const dayNames = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
     const dayName = dayNames[date.getDay()];
     const schedule = barber.work_schedule as WorkSchedule;
     return schedule?.[dayName]?.enabled || false;

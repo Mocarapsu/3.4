@@ -1,39 +1,35 @@
-import React from "react"
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { LoadingScreen } from './components/LoadingScreen';
 import { LoginPage } from './pages/LoginPage';
 import { RoleSelector } from './components/RoleSelector';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { BarberDashboard } from './pages/barber/BarberDashboard';
 import { ClientPortal } from './pages/client/ClientPortal';
-import { Scissors } from 'lucide-react';
+import type { UserRole } from './types';
 
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/20 mb-4 animate-pulse">
-          <Scissors className="w-8 h-8 text-primary" />
-        </div>
-        <p className="text-muted-foreground">Cargando...</p>
-      </div>
-    </div>
-  );
-}
+// =============================================
+// Analogia PHP:
+// App.tsx es como tu archivo routes/web.php de Laravel.
+// Define TODAS las URLs de tu aplicacion y que componente
+// (pagina) se muestra en cada una.
+// =============================================
 
-function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
-  const { user, profile, loading } = useAuth();
+/**
+ * Calcula la ruta por defecto segun el estado del usuario.
+ * Es como un switch en PHP que decide a donde redirigir.
+ */
+function getDefaultRoute(user: unknown, profile: { role: UserRole } | null): string {
+  if (!user) return '/login';
+  if (!profile || !profile.role) return '/select-role';
 
-  if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/login" replace />;
-  if (!profile || !profile.role) return <Navigate to="/select-role" replace />;
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
-    if (profile.role === 'admin') return <Navigate to="/admin" replace />;
-    if (profile.role === 'barber') return <Navigate to="/barber" replace />;
-    return <Navigate to="/client" replace />;
-  }
-
-  return <>{children}</>;
+  const routes: Record<UserRole, string> = {
+    admin: '/admin',
+    barber: '/barber',
+    client: '/portal',
+  };
+  return routes[profile.role];
 }
 
 function AppRoutes() {
@@ -41,25 +37,54 @@ function AppRoutes() {
 
   if (loading) return <LoadingScreen />;
 
-  const getDefaultRoute = () => {
-    if (!user) return '/login';
-    if (!profile || !profile.role) return '/select-role';
-    switch (profile.role) {
-      case 'admin': return '/admin';
-      case 'barber': return '/barber';
-      default: return '/client';
-    }
-  };
+  const defaultRoute = getDefaultRoute(user, profile);
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to={getDefaultRoute()} replace /> : <LoginPage />} />
-      <Route path="/select-role" element={user && !profile?.role ? <RoleSelector /> : <Navigate to={getDefaultRoute()} replace />} />
-      <Route path="/admin/*" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-      <Route path="/barber/*" element={<ProtectedRoute allowedRoles={['barber']}><BarberDashboard /></ProtectedRoute>} />
-      <Route path="/client/*" element={<ProtectedRoute allowedRoles={['client']}><ClientPortal /></ProtectedRoute>} />
-      <Route path="/" element={<Navigate to={getDefaultRoute()} replace />} />
-      <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
+      {/* Rutas publicas */}
+      <Route
+        path="/login"
+        element={user ? <Navigate to={defaultRoute} replace /> : <LoginPage />}
+      />
+
+      {/* Seleccion de rol (solo si estas logueado pero sin rol) */}
+      <Route
+        path="/select-role"
+        element={
+          user && !profile?.role
+            ? <RoleSelector />
+            : <Navigate to={defaultRoute} replace />
+        }
+      />
+
+      {/* Rutas protegidas por rol */}
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/barber/*"
+        element={
+          <ProtectedRoute allowedRoles={['barber']}>
+            <BarberDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/portal/*"
+        element={
+          <ProtectedRoute allowedRoles={['client']}>
+            <ClientPortal />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Cualquier otra ruta -> redirigir al default */}
+      <Route path="*" element={<Navigate to={defaultRoute} replace />} />
     </Routes>
   );
 }
@@ -69,5 +94,5 @@ export default function App() {
     <AuthProvider>
       <AppRoutes />
     </AuthProvider>
-  )
+  );
 }

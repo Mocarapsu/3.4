@@ -1,34 +1,46 @@
-'use client';
-
-import React from "react"
-
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../ui/Card';
+import { Card, CardContent } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { Modal } from '../ui/Modal';
-import { UserPlus, Edit, Trash2, Clock, Calendar } from 'lucide-react';
+import { UserPlus, Users, Edit, Trash2, Clock, Calendar } from 'lucide-react';
 import type { Barber, Profile, WorkSchedule } from '../../types';
+
+// =============================================
+// Analogia PHP:
+// Antes usabamos supabase.auth.signUp() desde el navegador
+// del admin para crear el barbero. Eso es como si en PHP
+// hicieras $_SESSION = [] para crear otro usuario y perdieras
+// tu propia sesion.
+//
+// La solucion correcta es llamar a una API del servidor
+// (como un endpoint en Laravel: POST /api/barbers) que use
+// la service_role key de Supabase para crear usuarios
+// sin afectar la sesion del admin.
+//
+// POR AHORA: Usamos /api/create-barber (Vercel Serverless Function)
+// que recibe los datos del barbero y usa la clave admin de Supabase.
+// =============================================
 
 const DAYS = [
   { key: 'lunes', label: 'Lunes' },
   { key: 'martes', label: 'Martes' },
-  { key: 'miércoles', label: 'Miércoles' },
+  { key: 'miercoles', label: 'Miercoles' },
   { key: 'jueves', label: 'Jueves' },
   { key: 'viernes', label: 'Viernes' },
-  { key: 'sábado', label: 'Sábado' },
+  { key: 'sabado', label: 'Sabado' },
   { key: 'domingo', label: 'Domingo' },
 ];
 
 const DEFAULT_SCHEDULE: WorkSchedule = {
   lunes: { enabled: true, start: '09:00', end: '19:00' },
   martes: { enabled: true, start: '09:00', end: '19:00' },
-  miércoles: { enabled: true, start: '09:00', end: '19:00' },
+  miercoles: { enabled: true, start: '09:00', end: '19:00' },
   jueves: { enabled: true, start: '09:00', end: '19:00' },
   viernes: { enabled: true, start: '09:00', end: '19:00' },
-  sábado: { enabled: true, start: '09:00', end: '17:00' },
+  sabado: { enabled: true, start: '09:00', end: '17:00' },
   domingo: { enabled: false, start: '09:00', end: '14:00' },
 };
 
@@ -44,6 +56,7 @@ export function BarberManagement() {
     phone: '',
     password: '',
   });
+  const [formError, setFormError] = useState('');
   const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_SCHEDULE);
   const [saving, setSaving] = useState(false);
 
@@ -53,8 +66,6 @@ export function BarberManagement() {
 
   const fetchBarbers = async () => {
     try {
-      if (!supabase) throw new Error('Supabase client is not initialized');
-      
       const { data, error } = await supabase
         .from('barbers')
         .select(`
@@ -72,42 +83,35 @@ export function BarberManagement() {
     }
   };
 
+  /**
+   * Crear barbero via API serverless.
+   *
+   * IMPORTANTE: No usamos supabase.auth.signUp() aqui porque
+   * eso cambiaria la sesion del admin al usuario recien creado.
+   * En su lugar, llamamos a una API que usa la service_role key.
+   */
   const handleAddBarber = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setFormError('');
 
     try {
-      if (!supabase) throw new Error('Supabase client is not initialized');
-      
-      // Create user account
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.fullName,
-            role: 'barber',
-          },
-        },
+      const response = await fetch('/api/create-barber', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.fullName,
+          phone: formData.phone,
+          workSchedule: DEFAULT_SCHEDULE,
+        }),
       });
 
-      if (authError) throw authError;
+      const result = await response.json();
 
-      // The profile will be created automatically via trigger
-      // Now create the barber record
-      if (authData.user) {
-        // Wait a moment for the trigger to create the profile
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const { error: barberError } = await supabase
-          .from('barbers')
-          .insert({
-            profile_id: authData.user.id,
-            is_active: true,
-            work_schedule: DEFAULT_SCHEDULE,
-          });
-
-        if (barberError) throw barberError;
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al crear barbero');
       }
 
       setShowModal(false);
@@ -115,7 +119,11 @@ export function BarberManagement() {
       fetchBarbers();
     } catch (error) {
       console.error('Error adding barber:', error);
-      alert('Error al agregar barbero. Verifica los datos e intenta de nuevo.');
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : 'Error al agregar barbero. Verifica los datos e intenta de nuevo.'
+      );
     } finally {
       setSaving(false);
     }
@@ -123,8 +131,6 @@ export function BarberManagement() {
 
   const handleToggleStatus = async (barber: Barber & { profile: Profile }) => {
     try {
-      if (!supabase) throw new Error('Supabase client is not initialized');
-
       const { error } = await supabase
         .from('barbers')
         .update({ is_active: !barber.is_active })
@@ -138,13 +144,11 @@ export function BarberManagement() {
   };
 
   const handleDeleteBarber = async (barberId: string) => {
-    if (!confirm('¿Estás seguro de eliminar este barbero? Esta acción no se puede deshacer.')) {
+    if (!confirm('Estas seguro de eliminar este barbero? Esta accion no se puede deshacer.')) {
       return;
     }
 
     try {
-      if (!supabase) throw new Error('Supabase client is not initialized');
-
       const { error } = await supabase
         .from('barbers')
         .delete()
@@ -168,8 +172,6 @@ export function BarberManagement() {
     setSaving(true);
 
     try {
-      if (!supabase) throw new Error('Supabase client is not initialized');
-
       const { error } = await supabase
         .from('barbers')
         .update({ work_schedule: schedule })
@@ -198,7 +200,7 @@ export function BarberManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-foreground">Gestión de Barberos</h2>
+        <h2 className="text-2xl font-bold text-foreground">Gestion de Barberos</h2>
         <Button onClick={() => setShowModal(true)}>
           <UserPlus className="w-4 h-4 mr-2" />
           Agregar Barbero
@@ -288,18 +290,18 @@ export function BarberManagement() {
         )}
       </div>
 
-      {/* Add Barber Modal */}
+      {/* Modal: Agregar Barbero */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Agregar Nuevo Barbero" size="md">
         <form onSubmit={handleAddBarber} className="space-y-4">
           <Input
             label="Nombre completo"
             value={formData.fullName}
             onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-            placeholder="Juan Pérez"
+            placeholder="Juan Perez"
             required
           />
           <Input
-            label="Correo electrónico"
+            label="Correo electronico"
             type="email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -307,20 +309,25 @@ export function BarberManagement() {
             required
           />
           <Input
-            label="Teléfono"
+            label="Telefono"
             type="tel"
             value={formData.phone}
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             placeholder="+52 123 456 7890"
           />
           <Input
-            label="Contraseña"
+            label="Contrasena"
             type="password"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            placeholder="••••••••"
+            placeholder="Minimo 6 caracteres"
             required
           />
+
+          {formError && (
+            <p className="text-destructive text-sm">{formError}</p>
+          )}
+
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setShowModal(false)}>
               Cancelar
@@ -332,10 +339,10 @@ export function BarberManagement() {
         </form>
       </Modal>
 
-      {/* Schedule Modal */}
-      <Modal 
-        isOpen={showScheduleModal} 
-        onClose={() => setShowScheduleModal(false)} 
+      {/* Modal: Editar Horario */}
+      <Modal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
         title={`Horario de ${selectedBarber?.profile?.full_name}`}
         size="lg"
       >
@@ -351,7 +358,7 @@ export function BarberManagement() {
                 />
                 <span className="font-medium text-foreground">{day.label}</span>
               </label>
-              
+
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="time"
@@ -371,7 +378,7 @@ export function BarberManagement() {
               </div>
             </div>
           ))}
-          
+
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1 bg-transparent" onClick={() => setShowScheduleModal(false)}>
               Cancelar
@@ -383,14 +390,5 @@ export function BarberManagement() {
         </div>
       </Modal>
     </div>
-  );
-}
-
-// For the icon used
-function Users({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
   );
 }

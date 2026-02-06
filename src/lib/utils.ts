@@ -52,7 +52,7 @@ export function generateTimeSlots(start: string, end: string, duration: number):
 }
 
 export function getDayName(day: number): string {
-  const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+  const days = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado']
   return days[day]
 }
 

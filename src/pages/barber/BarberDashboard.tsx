@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,7 +10,6 @@ import {
   Clock, 
   DollarSign, 
   CheckCircle,
-  XCircle,
   LogOut,
   ChevronLeft,
   ChevronRight
