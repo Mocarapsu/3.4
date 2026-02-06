@@ -41,7 +41,8 @@ export function ClientPortal() {
       if (error) throw error;
       setAppointments(data || []);
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('AbortError') || msg.includes('aborted')) return;
       console.error('Error fetching appointments:', error);
     } finally {
       setLoading(false);

@@ -48,7 +48,8 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
         setServices(servicesRes.data || []);
         setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
       } catch (error: unknown) {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('AbortError') || msg.includes('aborted')) return;
         console.error('Error loading booking data:', error);
       }
     };

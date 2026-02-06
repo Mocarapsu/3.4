@@ -7,10 +7,29 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Buscar perfil en la DB. Si no existe (trigger tarda), reintenta.
+async function loadProfile(userId: string, retries = 2): Promise<Profile | null> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (data && !error) return data as Profile;
+    } catch {
+      // ignorar errores de red
+    }
+    if (i < retries) await new Promise(r => setTimeout(r, 400));
+  }
+  return null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -18,81 +37,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-
-    // Funcion para buscar el perfil con reintentos
-    async function loadProfile(userId: string, retries = 2): Promise<Profile | null> {
-      for (let i = 0; i <= retries; i++) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (data && !error) return data as Profile;
-        if (i < retries) await new Promise(r => setTimeout(r, 500));
+    // 1. Cargar sesion existente
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        const p = await loadProfile(session.user.id, 2);
+        setProfile(p);
       }
-      return null;
-    }
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+    });
 
-    // 1. Cargar sesion existente al montar
-    async function init() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!mounted) return;
-
-        if (session?.user) {
-          setUser(session.user);
-          const p = await loadProfile(session.user.id, 2);
-          if (mounted) setProfile(p);
-        }
-      } catch {
-        // ignorar errores de red / abort
+    // 2. Escuchar cambios de auth (login, logout, token refresh)
+    // NO guardamos la subscription para unsubscribe porque hacerlo
+    // aborta las peticiones internas de supabase-js (causa AbortError).
+    // AuthProvider vive toda la vida de la app, no necesita cleanup.
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        setUser(session.user);
+        setLoading(true);
+        const p = await loadProfile(session.user.id, 3);
+        setProfile(p);
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        setUser(session.user);
       }
-      if (mounted) setLoading(false);
-    }
-
-    init();
-
-    // 2. Escuchar cambios de auth (login, logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
-
-        if (event === 'SIGNED_IN' && session?.user) {
-          setUser(session.user);
-          setLoading(true);
-          const p = await loadProfile(session.user.id, 3);
-          if (mounted) {
-            setProfile(p);
-            setLoading(false);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          setUser(session.user);
-        }
-      }
-    );
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    });
   }, []);
 
-  async function signOut() {
+  function signOut() {
+    // Limpiar estado inmediatamente para que la UI responda rapido
     setUser(null);
     setProfile(null);
     setLoading(false);
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // ignorar errores de red
-    }
+    // Llamar a supabase en background
+    supabase.auth.signOut().catch(() => {});
   }
 
   return (
