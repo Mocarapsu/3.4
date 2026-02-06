@@ -21,25 +21,24 @@ import type { UserRole } from './types';
  * - Sin perfil/rol -> /portal (sera client por defecto via trigger)
  * - Con rol -> su dashboard correspondiente
  */
-function getDefaultRoute(user: unknown, profile: { role: UserRole } | null): string {
-  if (!user) return '/login';
-
-  // Si el perfil aun no cargo, mandamos a /portal (client es el default)
-  const role = profile?.role ?? 'client';
-  const routes: Record<UserRole, string> = {
-    admin: '/admin',
-    barber: '/barber',
-    client: '/portal',
-  };
-  return routes[role];
-}
-
 function AppRoutes() {
   const { user, profile, loading } = useAuth();
 
+  console.log('[v0] AppRoutes:', { loading, user: user?.email, role: profile?.role });
+
   if (loading) return <LoadingScreen />;
 
-  const defaultRoute = getDefaultRoute(user, profile);
+  // Si no hay usuario -> login. Si hay usuario -> redirigir segun su rol.
+  let defaultRoute = '/login';
+  if (user) {
+    const role = profile?.role ?? 'client';
+    const routes: Record<UserRole, string> = {
+      admin: '/admin',
+      barber: '/barber',
+      client: '/portal',
+    };
+    defaultRoute = routes[role];
+  }
 
   return (
     <Routes>

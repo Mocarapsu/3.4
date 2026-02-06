@@ -12,24 +12,27 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
 
-  // Mientras verificamos la sesion, mostramos loading
+  console.log('[v0] ProtectedRoute:', { loading, user: user?.email, role: profile?.role, allowedRoles });
+
+  // Mientras el auth se resuelve, mostrar loading
   if (loading) return <LoadingScreen />;
 
   // No hay usuario -> ir al login
   if (!user) return <Navigate to="/login" replace />;
 
-  // Tiene usuario pero el perfil aun no cargo -> mostrar loading
-  // (esto es temporal, el fetchProfile resolvera pronto)
-  if (!profile) return <LoadingScreen />;
+  // El perfil aun no existe (trigger no creo el registro) -> dejar pasar con
+  // role por defecto. Esto evita loops y pantallas pegadas en loading.
+  // El usuario recien registrado siempre es "client".
+  const userRole = profile?.role ?? 'client';
 
-  // Verificar que el rol este permitido en esta ruta
-  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+  // Si tiene rol pero no esta permitido en esta ruta, redirigir a su dashboard
+  if (allowedRoles && !allowedRoles.includes(userRole)) {
     const dashboardRoutes: Record<UserRole, string> = {
       admin: '/admin',
       barber: '/barber',
       client: '/portal',
     };
-    return <Navigate to={dashboardRoutes[profile.role]} replace />;
+    return <Navigate to={dashboardRoutes[userRole]} replace />;
   }
 
   return <>{children}</>;

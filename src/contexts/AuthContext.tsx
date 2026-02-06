@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import type { User } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 import type { Profile } from '../types';
 
 interface AuthContextType {
@@ -16,12 +16,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  // Ref para evitar que StrictMode cause doble-inicializacion
-  const initialized = useRef(false);
 
-  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
-    // Hasta 3 intentos para dar tiempo al trigger post-signup
-    for (let attempt = 0; attempt < 3; attempt++) {
+  // Busca el perfil en Supabase. Reintenta para dar tiempo al trigger post-signup.
+  const fetchProfile = useCallback(async (userId: string, retries = 3): Promise<Profile | null> => {
+    for (let i = 0; i < retries; i++) {
       try {
         const { data, error } = await supabase
           .from('profiles')
@@ -30,67 +28,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single();
 
         if (!error && data) {
+          console.log('[v0] fetchProfile: found profile, role:', data.role);
           return data as Profile;
         }
-      } catch {
-        // Ignorar errores de red, seguir intentando
+        console.log('[v0] fetchProfile: attempt', i + 1, 'failed, error:', error?.message);
+      } catch (e) {
+        console.log('[v0] fetchProfile: exception on attempt', i + 1, e);
       }
-
-      if (attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Esperar antes de reintentar
+      if (i < retries - 1) {
+        await new Promise(r => setTimeout(r, 500));
       }
     }
     return null;
   }, []);
 
+  // Maneja el cambio de sesion (tanto al cargar la app como al hacer login/logout)
+  const handleSession = useCallback(async (session: Session | null) => {
+    if (session?.user) {
+      console.log('[v0] handleSession: user found:', session.user.email);
+      setUser(session.user);
+      const p = await fetchProfile(session.user.id);
+      setProfile(p);
+    } else {
+      console.log('[v0] handleSession: no user, clearing');
+      setUser(null);
+      setProfile(null);
+    }
+    setLoading(false);
+  }, [fetchProfile]);
+
   useEffect(() => {
-    // Evitar doble ejecucion por StrictMode
-    if (initialized.current) return;
-    initialized.current = true;
+    // Supabase recomienda usar SOLO onAuthStateChange con INITIAL_SESSION
+    // para evitar race conditions entre getSession y onAuthStateChange.
+    // onAuthStateChange dispara INITIAL_SESSION inmediatamente al suscribirse,
+    // asi que no necesitamos llamar getSession() por separado.
+    console.log('[v0] AuthProvider: mounting, subscribing to auth...');
 
-    // 1. Revisar sesion existente
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        const p = await fetchProfile(session.user.id);
-        if (p) setProfile(p);
-      }
-      setLoading(false);
-    }).catch(() => {
-      setLoading(false);
-    });
-
-    // 2. Escuchar cambios (login, logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          setUser(session.user);
-          const p = await fetchProfile(session.user.id);
-          if (p) setProfile(p);
-          setLoading(false);
+        console.log('[v0] onAuthStateChange:', event);
+
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          await handleSession(session);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setProfile(null);
           setLoading(false);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Solo actualizar el user object, no re-fetch perfil
+          setUser(session.user);
         }
       }
     );
 
     return () => {
-      subscription?.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [handleSession]);
 
   const signOut = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Error al cerrar sesion:', error);
-    }
-    // Limpiar estados directamente por si onAuthStateChange no se dispara
+    console.log('[v0] signOut: starting');
+    // Limpiar estado PRIMERO para que la UI responda inmediatamente
     setUser(null);
     setProfile(null);
-    setLoading(false);
+    // Luego cerrar sesion en Supabase
+    try {
+      await supabase.auth.signOut();
+      console.log('[v0] signOut: success');
+    } catch (error) {
+      console.error('[v0] signOut: error:', error);
+    }
   }, []);
 
   return (
