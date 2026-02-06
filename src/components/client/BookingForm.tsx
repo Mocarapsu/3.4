@@ -39,33 +39,39 @@ export function BookingForm({ onSuccess, onCancel }: BookingFormProps) {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   useEffect(() => {
+    // Usar fetch nativo para evitar el AbortError de supabase-js
+    const SUPA_URL = import.meta.env.VITE_SUPABASE_URL as string;
+    const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
     let cancelled = false;
 
     const loadInitialData = async () => {
-      // Reintentar hasta 3 veces si falla (por AbortError, red, etc)
       for (let attempt = 0; attempt < 3; attempt++) {
         if (cancelled) return;
         try {
+          const headers = {
+            'apikey': SUPA_KEY,
+            'Authorization': `Bearer ${SUPA_KEY}`,
+            'Accept': 'application/json',
+          };
           const [servicesRes, barbersRes] = await Promise.all([
-            supabase.from('services').select('*').eq('is_active', true),
-            supabase.from('barbers').select('*, profile:profiles(*)').eq('is_active', true),
+            fetch(`${SUPA_URL}/rest/v1/services?is_active=eq.true&select=*`, { headers }),
+            fetch(`${SUPA_URL}/rest/v1/barbers?is_active=eq.true&select=*,profile:profiles(*)`, { headers }),
           ]);
 
-          // Si hay error de abort, reintentar
-          const sErr = servicesRes.error?.message ?? '';
-          const bErr = barbersRes.error?.message ?? '';
-          if (sErr.includes('abort') || bErr.includes('abort')) {
-            if (attempt < 2) {
-              await new Promise(r => setTimeout(r, 500));
-              continue;
-            }
+          if (!servicesRes.ok || !barbersRes.ok) {
+            if (attempt < 2) { await new Promise(r => setTimeout(r, 500)); continue; }
+            break;
           }
 
+          const servicesData = await servicesRes.json();
+          const barbersData = await barbersRes.json();
+
           if (!cancelled) {
-            setServices(servicesRes.data || []);
-            setBarbers((barbersRes.data as (Barber & { profile: Profile })[]) || []);
+            setServices(servicesData || []);
+            setBarbers((barbersData as (Barber & { profile: Profile })[]) || []);
+            console.log('[v0] BookingForm: loaded', servicesData?.length, 'services,', barbersData?.length, 'barbers');
           }
-          return; // exito, salir del loop
+          return;
         } catch (e) {
           if (attempt < 2) {
             await new Promise(r => setTimeout(r, 500));

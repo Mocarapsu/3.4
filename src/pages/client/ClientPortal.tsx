@@ -27,38 +27,31 @@ export function ClientPortal() {
   }, []);
 
   const fetchAppointments = async () => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { data, error } = await supabase
-          .from('appointments')
-          .select(`
-            *,
-            barber:barbers(*, profile:profiles(*)),
-            service:services(*)
-          `)
-          .order('appointment_date', { ascending: false })
-          .order('start_time', { ascending: false });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const SUPA_URL = import.meta.env.VITE_SUPABASE_URL as string;
+      const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-        if (error) {
-          const msg = error.message ?? '';
-          if (msg.includes('abort') || msg.includes('AbortError')) {
-            if (attempt < 2) {
-              await new Promise(r => setTimeout(r, 500));
-              continue;
-            }
-          }
-          console.error('Error fetching appointments:', error.message);
-          break;
+      const res = await fetch(
+        `${SUPA_URL}/rest/v1/appointments?select=*,barber:barbers(*,profile:profiles(*)),service:services(*)&order=appointment_date.desc,start_time.desc`,
+        {
+          headers: {
+            'apikey': SUPA_KEY,
+            'Authorization': `Bearer ${token || SUPA_KEY}`,
+            'Accept': 'application/json',
+          },
         }
+      );
+
+      if (!res.ok) {
+        console.error('Error fetching appointments: HTTP', res.status);
+      } else {
+        const data = await res.json();
         setAppointments(data || []);
-        break;
-      } catch (e) {
-        if (attempt < 2) {
-          await new Promise(r => setTimeout(r, 500));
-          continue;
-        }
-        console.error('Error fetching appointments:', e);
       }
+    } catch (e) {
+      console.error('Error fetching appointments:', e);
     }
     setLoading(false);
   };

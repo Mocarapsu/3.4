@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import type { Profile } from '../types';
@@ -12,101 +12,106 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Usar fetch nativo para queries al perfil. Esto evita
+// el AbortController interno de supabase-js que cancela
+// las peticiones cuando hay operaciones de auth en curso.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+async function fetchProfileDirect(userId: string, accessToken: string): Promise<Profile | null> {
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=*`,
+        {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+          },
+        }
+      );
+      if (!res.ok) {
+        console.warn('[v0] fetchProfileDirect HTTP', res.status);
+        if (i < 2) { await new Promise(r => setTimeout(r, 400)); continue; }
+        return null;
+      }
+      const rows = await res.json();
+      if (rows && rows.length > 0) return rows[0] as Profile;
+      // No profile found - might be a new user, retry
+      if (i < 2) { await new Promise(r => setTimeout(r, 400)); continue; }
+      return null;
+    } catch (e) {
+      console.warn('[v0] fetchProfileDirect error:', e);
+      if (i < 2) { await new Promise(r => setTimeout(r, 400)); continue; }
+    }
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  // Ref para saber si ya terminamos la carga inicial
-  const initialLoad = useRef(true);
 
-  // --- PASO 1: Solo escuchar auth y setear user ---
   useEffect(() => {
-    // Cargar sesion existente
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      // Si no hay sesion, ya terminamos de cargar
-      if (!session?.user) {
-        setLoading(false);
-        initialLoad.current = false;
-      }
-    }).catch(() => {
-      setLoading(false);
-      initialLoad.current = false;
-    });
+    let mounted = true;
 
-    // Escuchar cambios: SOLO setear user, nada de queries aqui
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
-        setProfile(null);
-        setLoading(false);
+    async function init() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!mounted) return;
+
+        if (session?.user) {
+          setUser(session.user);
+          const p = await fetchProfileDirect(session.user.id, session.access_token);
+          if (mounted) {
+            setProfile(p);
+            console.log('[v0] init: profile loaded, role:', p?.role);
+          }
+        }
+      } catch (e) {
+        console.warn('[v0] init error:', e);
       }
-    });
+      if (mounted) setLoading(false);
+    }
+
+    init();
+
+    // Escuchar cambios de auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[v0] onAuthStateChange:', event);
+        if (!mounted) return;
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          setUser(session.user);
+          setLoading(true);
+          // Usar setTimeout(0) para salir del contexto del callback de auth
+          setTimeout(async () => {
+            const p = await fetchProfileDirect(session.user.id, session.access_token);
+            if (mounted) {
+              setProfile(p);
+              setLoading(false);
+              console.log('[v0] SIGNED_IN: profile loaded, role:', p?.role);
+            }
+          }, 0);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Actualizar el user con el nuevo token
+          setUser(session.user);
+        }
+      }
+    );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
-
-  // --- PASO 2: Cuando user cambia, cargar perfil FUERA del callback de auth ---
-  useEffect(() => {
-    if (!user) {
-      setProfile(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function fetchProfile() {
-      // Reintentar hasta 4 veces con delay incremental
-      for (let i = 0; i < 4; i++) {
-        if (cancelled) return;
-
-        // Pequeno delay antes de cada intento (excepto el primero en carga inicial)
-        if (i > 0 || !initialLoad.current) {
-          await new Promise(r => setTimeout(r, 300 * (i + 1)));
-        }
-
-        if (cancelled) return;
-
-        try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-          if (cancelled) return;
-
-          if (data && !error) {
-            setProfile(data as Profile);
-            setLoading(false);
-            initialLoad.current = false;
-            return;
-          }
-
-          // Si el error NO es abort, no reintentar
-          const msg = error?.message ?? '';
-          if (!msg.includes('abort') && !msg.includes('AbortError')) {
-            console.warn('Error loading profile:', msg);
-            break;
-          }
-        } catch {
-          // Error de red, reintentar
-        }
-      }
-
-      // Si llegamos aqui, no se pudo cargar el perfil
-      if (!cancelled) {
-        setProfile(null);
-        setLoading(false);
-        initialLoad.current = false;
-      }
-    }
-
-    fetchProfile();
-    return () => { cancelled = true; };
-  }, [user]);
 
   function signOut() {
     setUser(null);
@@ -124,8 +129,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth debe usarse dentro de un AuthProvider');
-  }
+  if (!context) throw new Error('useAuth debe usarse dentro de un AuthProvider');
   return context;
 }
