@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import type { Profile } from '../types';
@@ -12,83 +12,101 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Buscar perfil en la DB con reintentos (por si hay AbortError, red lenta, etc)
-async function loadProfile(userId: string, retries = 3): Promise<Profile | null> {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      console.log('[v0] loadProfile attempt', i, '- data:', JSON.stringify(data), 'error:', JSON.stringify(error));
-
-      if (data && !error) return data as Profile;
-
-      // Si es AbortError, reintentar
-      const msg = error?.message ?? '';
-      if (msg.includes('abort') || msg.includes('AbortError')) {
-        if (i < retries) {
-          await new Promise(r => setTimeout(r, 600));
-          continue;
-        }
-      }
-      
-      // Otro error (ej: no existe el perfil), no reintentar
-      if (error && !msg.includes('abort')) {
-        console.warn('[v0] loadProfile non-abort error:', msg);
-        break;
-      }
-    } catch (e) {
-      console.warn('[v0] loadProfile catch:', e);
-    }
-    if (i < retries) await new Promise(r => setTimeout(r, 600));
-  }
-  return null;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  // Ref para saber si ya terminamos la carga inicial
+  const initialLoad = useRef(true);
 
+  // --- PASO 1: Solo escuchar auth y setear user ---
   useEffect(() => {
-    // 1. Cargar sesion existente
-    console.log('[v0] AuthProvider: calling getSession...');
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('[v0] AuthProvider: getSession result -', session?.user?.email ?? 'no session');
-      if (session?.user) {
-        setUser(session.user);
-        const p = await loadProfile(session.user.id, 3);
-        console.log('[v0] AuthProvider: profile loaded, role:', p?.role ?? 'NULL');
-        setProfile(p);
+    // Cargar sesion existente
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      // Si no hay sesion, ya terminamos de cargar
+      if (!session?.user) {
+        setLoading(false);
+        initialLoad.current = false;
       }
+    }).catch(() => {
       setLoading(false);
-    }).catch((err) => {
-      console.error('[v0] AuthProvider: getSession error:', err);
-      setLoading(false);
+      initialLoad.current = false;
     });
 
-    // 2. Escuchar cambios de auth (login, logout, token refresh)
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[v0] onAuthStateChange:', event, session?.user?.email ?? 'no user');
-      if (event === 'SIGNED_IN' && session?.user) {
-        setUser(session.user);
-        setLoading(true);
-        const p = await loadProfile(session.user.id, 3);
-        console.log('[v0] onAuthStateChange: profile loaded, role:', p?.role ?? 'NULL');
-        setProfile(p);
-        setLoading(false);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
+    // Escuchar cambios: SOLO setear user, nada de queries aqui
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
         setProfile(null);
         setLoading(false);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        setUser(session.user);
       }
     });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // --- PASO 2: Cuando user cambia, cargar perfil FUERA del callback de auth ---
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchProfile() {
+      // Reintentar hasta 4 veces con delay incremental
+      for (let i = 0; i < 4; i++) {
+        if (cancelled) return;
+
+        // Pequeno delay antes de cada intento (excepto el primero en carga inicial)
+        if (i > 0 || !initialLoad.current) {
+          await new Promise(r => setTimeout(r, 300 * (i + 1)));
+        }
+
+        if (cancelled) return;
+
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+
+          if (cancelled) return;
+
+          if (data && !error) {
+            setProfile(data as Profile);
+            setLoading(false);
+            initialLoad.current = false;
+            return;
+          }
+
+          // Si el error NO es abort, no reintentar
+          const msg = error?.message ?? '';
+          if (!msg.includes('abort') && !msg.includes('AbortError')) {
+            console.warn('Error loading profile:', msg);
+            break;
+          }
+        } catch {
+          // Error de red, reintentar
+        }
+      }
+
+      // Si llegamos aqui, no se pudo cargar el perfil
+      if (!cancelled) {
+        setProfile(null);
+        setLoading(false);
+        initialLoad.current = false;
+      }
+    }
+
+    fetchProfile();
+    return () => { cancelled = true; };
+  }, [user]);
 
   function signOut() {
     setUser(null);
